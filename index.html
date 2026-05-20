@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Emergency Corridor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1 { font-size: 20px; margin-top: 16px; letter-spacing: 1px; color: #ff4444; }
+    p.sub { font-size: 12px; color: #888; margin-top: 4px; margin-bottom: 24px; }
+
+    #btn {
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      border: 4px solid #333;
+      font-size: 20px; font-weight: bold;
+      cursor: pointer;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 8px;
+      transition: all 0.3s;
+      background: #1a1a1a;
+      color: #aaa;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #btn.on {
+      background: #cc0000;
+      border-color: #ff4444;
+      color: #fff;
+      box-shadow: 0 0 40px #ff000088;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 40px #ff000088; }
+      50% { transform: scale(1.06); box-shadow: 0 0 60px #ff0000bb; }
+    }
+    #btn .icon { font-size: 40px; }
+    #btn .label { font-size: 14px; }
+
+    #status-box {
+      margin-top: 24px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 14px 20px;
+      width: 100%;
+      max-width: 360px;
+      font-size: 13px;
+    }
+    #status-box .row {
+      display: flex; justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid #222;
+    }
+    #status-box .row:last-child { border-bottom: none; }
+    #status-box .row .label { color: #888; }
+    #status-box .row .val { color: #fff; font-weight: bold; }
+    #status-box .row .val.green { color: #22cc66; }
+    #status-box .row .val.red { color: #ff4444; }
+    #status-box .row .val.yellow { color: #ffaa00; }
+
+    #poles-box {
+      margin-top: 16px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 14px 20px;
+      width: 100%;
+      max-width: 360px;
+    }
+    #poles-box h3 { font-size: 13px; color: #888; margin-bottom: 10px; }
+    .pole-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid #222;
+      font-size: 13px;
+    }
+    .pole-row:last-child { border-bottom: none; }
+    .pole-name { color: #ccc; }
+    .pole-dist { color: #888; font-size: 12px; }
+    .pole-status {
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 11px; font-weight: bold;
+    }
+    .pole-status.alert { background: #cc0000; color: #fff; }
+    .pole-status.ready { background: #224422; color: #22cc66; }
+    .pole-status.off   { background: #222; color: #555; }
+
+    #map {
+      margin-top: 16px;
+      width: 100%; max-width: 360px;
+      height: 240px;
+      border-radius: 12px;
+      border: 1px solid #333;
+      overflow: hidden;
+    }
+    #gps-warning {
+      display: none;
+      margin-top: 12px;
+      background: #332200;
+      border: 1px solid #aa6600;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #ffaa44;
+      max-width: 360px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🚑 EMERGENCY CORRIDOR</h1>
+  <p class="sub">Kochi Ambulance Alert System</p>
+
+  <button id="btn" onclick="toggle()">
+    <span class="icon">🚨</span>
+    <span class="label" id="btn-label">TAP TO ACTIVATE</span>
+  </button>
+
+  <div id="gps-warning">
+    ⚠️ GPS not available. Make sure location is enabled in your browser settings.
+  </div>
+
+  <div id="status-box">
+    <div class="row">
+      <span class="label">System</span>
+      <span class="val red" id="s-system">INACTIVE</span>
+    </div>
+    <div class="row">
+      <span class="label">GPS</span>
+      <span class="val yellow" id="s-gps">Waiting...</span>
+    </div>
+    <div class="row">
+      <span class="label">Latitude</span>
+      <span class="val" id="s-lat">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Longitude</span>
+      <span class="val" id="s-lng">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Last update</span>
+      <span class="val" id="s-time">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Firebase</span>
+      <span class="val" id="s-fb">—</span>
+    </div>
+  </div>
+
+  <div id="poles-box">
+    <h3>POLE STATUS</h3>
+    <div class="pole-row">
+      <div>
+        <div class="pole-name">Pole 1 — High Court Jn</div>
+        <div class="pole-dist" id="dist1">—</div>
+      </div>
+      <span class="pole-status off" id="pole1-status">OFF</span>
+    </div>
+    <div class="pole-row">
+      <div>
+        <div class="pole-name">Pole 2 — Menaka</div>
+        <div class="pole-dist" id="dist2">—</div>
+      </div>
+      <span class="pole-status off" id="pole2-status">OFF</span>
+    </div>
+    <div class="pole-row">
+      <div>
+        <div class="pole-name">Pole 3 — General Hospital</div>
+        <div class="pole-dist" id="dist3">—</div>
+      </div>
+      <span class="pole-status off" id="pole3-status">OFF</span>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+<script>
+  const FIREBASE_URL = "https://emergency-cooridoor-system-default-rtdb.firebaseio.com";
+
+  const POLES = [
+    { id: 1, name: "High Court Junction",   lat: 9.9835,     lng: 76.2742    },
+    { id: 2, name: "Menaka Marine Drive",   lat: 9.978034,   lng: 76.277107  },
+    { id: 3, name: "General Hospital",      lat: 9.9720127,  lng: 76.2810367 }
+  ];
+
+  const ALERT_DISTANCE_M = 100;
+
+  let active = false;
+  let watchId = null;
+  let currentLat = null;
+  let currentLng = null;
+  let map = null;
+  let ambulanceMarker = null;
+  let poleMarkers = [];
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+
+  function toggle() {
+    active = !active;
+    const btn = document.getElementById('btn');
+    const label = document.getElementById('btn-label');
+
+    if (active) {
+      btn.classList.add('on');
+      label.textContent = 'ACTIVE — LIVE';
+      document.getElementById('s-system').textContent = 'ACTIVE';
+      document.getElementById('s-system').className = 'val green';
+      document.getElementById('s-gps').textContent = 'Acquiring...';
+      document.getElementById('gps-warning').style.display = 'none';
+
+      sendToFirebase(true, 0, 0);
+
+      watchId = navigator.geolocation.watchPosition(onGPS, onGPSError, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 10000
+      });
+    } else {
+      btn.classList.remove('on');
+      label.textContent = 'TAP TO ACTIVATE';
+      document.getElementById('s-system').textContent = 'INACTIVE';
+      document.getElementById('s-system').className = 'val red';
+      document.getElementById('s-gps').textContent = 'Off';
+      document.getElementById('s-gps').className = 'val yellow';
+
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      sendToFirebase(false, 0, 0);
+      resetPoleStatuses();
+    }
+  }
+
+  function onGPS(pos) {
+    currentLat = pos.coords.latitude;
+    currentLng = pos.coords.longitude;
+    const acc = pos.coords.accuracy;
+
+    document.getElementById('s-gps').textContent = '✅ Live (' + Math.round(acc) + 'm acc)';
+    document.getElementById('s-gps').className = 'val green';
+    document.getElementById('s-lat').textContent = currentLat.toFixed(6);
+    document.getElementById('s-lng').textContent = currentLng.toFixed(6);
+    document.getElementById('s-time').textContent = new Date().toLocaleTimeString();
+    document.getElementById('gps-warning').style.display = 'none';
+
+    sendToFirebase(true, currentLat, currentLng);
+    updatePoleDistances(currentLat, currentLng);
+    updateMapMarker(currentLat, currentLng);
+  }
+
+  function onGPSError(err) {
+    document.getElementById('s-gps').textContent = '❌ Error: ' + err.message;
+    document.getElementById('s-gps').className = 'val red';
+    document.getElementById('gps-warning').style.display = 'block';
+  }
+
+  async function sendToFirebase(isActive, lat, lng) {
+    try {
+      const res = await fetch(FIREBASE_URL + "/ambulance.json", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: isActive, lat: lat, lng: lng, ts: Date.now() })
+      });
+      if (res.ok) {
+        document.getElementById('s-fb').textContent = '✅ Synced';
+        document.getElementById('s-fb').className = 'val green';
+      } else {
+        document.getElementById('s-fb').textContent = '❌ Error ' + res.status;
+        document.getElementById('s-fb').className = 'val red';
+      }
+    } catch(e) {
+      document.getElementById('s-fb').textContent = '❌ No internet';
+      document.getElementById('s-fb').className = 'val red';
+    }
+  }
+
+  function updatePoleDistances(lat, lng) {
+    POLES.forEach((pole, i) => {
+      const dist = haversine(lat, lng, pole.lat, pole.lng);
+      const distEl  = document.getElementById('dist' + pole.id);
+      const statEl  = document.getElementById('pole' + pole.id + '-status');
+      distEl.textContent = Math.round(dist) + ' m away';
+
+      if (dist < ALERT_DISTANCE_M) {
+        statEl.textContent = '🔴 ALERT';
+        statEl.className = 'pole-status alert';
+      } else if (dist < 500) {
+        statEl.textContent = 'READY';
+        statEl.className = 'pole-status ready';
+      } else {
+        statEl.textContent = 'STANDBY';
+        statEl.className = 'pole-status off';
+      }
+    });
+  }
+
+  function resetPoleStatuses() {
+    POLES.forEach(pole => {
+      document.getElementById('dist' + pole.id).textContent = '—';
+      const s = document.getElementById('pole' + pole.id + '-status');
+      s.textContent = 'OFF';
+      s.className = 'pole-status off';
+    });
+  }
+
+  // Google Maps
+  function initMap() {
+    const center = { lat: 9.978, lng: 76.277 };
+    map = new google.maps.Map(document.getElementById('map'), {
+      center: center,
+      zoom: 14,
+      mapTypeId: 'roadmap',
+      disableDefaultUI: true,
+      zoomControl: true,
+      styles: [
+        { elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
+        { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
+        { featureType: "road", elementType: "geometry", stylers: [{ color: "#304a7d" }] },
+        { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1626" }] }
+      ]
+    });
+
+    // Add pole markers
+    const poleIcon = {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 10,
+      fillColor: "#22cc66",
+      fillOpacity: 1,
+      strokeColor: "#fff",
+      strokeWeight: 2
+    };
+    POLES.forEach(pole => {
+      const m = new google.maps.Marker({
+        position: { lat: pole.lat, lng: pole.lng },
+        map: map,
+        title: "Pole: " + pole.name,
+        icon: poleIcon,
+        label: { text: "P" + pole.id, color: "#fff", fontSize: "10px", fontWeight: "bold" }
+      });
+      poleMarkers.push(m);
+    });
+
+    // Ambulance marker
+    ambulanceMarker = new google.maps.Marker({
+      position: center,
+      map: map,
+      title: "Ambulance",
+      visible: false,
+      icon: {
+        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+        scale: 6,
+        fillColor: "#ff4444",
+        fillOpacity: 1,
+        strokeColor: "#fff",
+        strokeWeight: 2
+      }
+    });
+  }
+
+  function updateMapMarker(lat, lng) {
+    if (!map || !ambulanceMarker) return;
+    const pos = { lat: lat, lng: lng };
+    ambulanceMarker.setPosition(pos);
+    ambulanceMarker.setVisible(true);
+    map.panTo(pos);
+  }
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBbdPXakLztZNDkU5160vGCPLBS9ZBajGU&callback=initMap" async defer></script>
+</body>
+</html>
