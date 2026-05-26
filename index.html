@@ -12,10 +12,10 @@
     body{font-family:sans-serif;background:#0d0d0d;color:#fff;
          min-height:100vh;display:flex;flex-direction:column;
          align-items:center;padding:16px;gap:14px}
- 
+
     h1{font-size:18px;letter-spacing:1px;color:#ff4444;margin-top:8px}
     .sub{font-size:11px;color:#666;margin-top:-10px}
- 
+
     /* ── BIG BUTTON ── */
     #mainBtn{
       width:190px;height:190px;border-radius:50%;
@@ -33,7 +33,7 @@
     }
     @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
     #mainBtn .icon{font-size:44px}
- 
+
     /* ── STATUS CARD ── */
     .card{width:100%;max-width:380px;background:#161616;
           border:1px solid #2a2a2a;border-radius:14px;padding:14px 16px}
@@ -45,7 +45,7 @@
     .row .lbl{color:#666}
     .row .val{font-weight:600}
     .green{color:#22cc66}.red{color:#ff4444}.yellow{color:#ffaa00}.blue{color:#5aabff}
- 
+
     /* ── POLE STATUS ── */
     .pole-row{display:flex;justify-content:space-between;
               align-items:center;padding:7px 0;
@@ -57,17 +57,17 @@
     .badge.alert{background:#cc0000;color:#fff}
     .badge.ready{background:#1a3a1a;color:#22cc66}
     .badge.off{background:#1e1e1e;color:#444}
- 
+
     /* ── MAP ── */
     #map{width:100%;max-width:380px;height:220px;
          border-radius:14px;border:1px solid #2a2a2a;overflow:hidden}
- 
+
     /* ── WARNING ── */
     #gpsWarn{display:none;width:100%;max-width:380px;
              background:#2a1a00;border:1px solid #aa6600;
              border-radius:10px;padding:10px 14px;
              font-size:12px;color:#ffaa44}
- 
+
     /* ── BEARING INDICATOR ── */
     #bearingBox{width:100%;max-width:380px;background:#161616;
                 border:1px solid #2a2a2a;border-radius:14px;
@@ -80,17 +80,17 @@
   </style>
 </head>
 <body>
- 
+
 <h1>🚑 EMERGENCY CORRIDOR</h1>
 <p class="sub">Kochi Ambulance Alert System</p>
- 
+
 <button id="mainBtn" onclick="toggle()">
   <span class="icon">🚨</span>
   <span id="btnLabel">TAP TO<br>ACTIVATE</span>
 </button>
- 
+
 <div id="gpsWarn">⚠️ GPS unavailable. Enable location in browser settings.</div>
- 
+
 <!-- STATUS -->
 <div class="card">
   <h3>System Status</h3>
@@ -111,7 +111,7 @@
   <div class="row"><span class="lbl">Firebase</span>
     <span class="val" id="sFb">—</span></div>
 </div>
- 
+
 <!-- DIRECTION INDICATOR -->
 <div id="bearingBox">
   <h3>Ambulance Direction</h3>
@@ -119,7 +119,7 @@
   <div id="dirLabel">Calculating...</div>
   <div id="bearingVal"></div>
 </div>
- 
+
 <!-- POLES -->
 <div class="card">
   <h3>Pole Status</h3>
@@ -142,33 +142,33 @@
     <span class="badge off" id="p3">OFF</span>
   </div>
 </div>
- 
+
 <div id="map"></div>
- 
+
 <script>
 // ─── CONFIG ────────────────────────────────────────────────
 const FIREBASE   = "https://emergency-cooridoor-system-default-rtdb.firebaseio.com";
 const MAPS_KEY   = "AIzaSyBbdPXakLztZNDkU5160vGCPLBS9ZBajGU";
 const DEST       = "Ernakulam General Hospital, Kochi";
- 
+
 const POLES = [
   {id:1, lat:9.9835,     lng:76.2742,    el:'p1', dist:'d1'},
   {id:2, lat:9.978034,   lng:76.277107,  el:'p2', dist:'d2'},
   {id:3, lat:9.9720127,  lng:76.2810367, el:'p3', dist:'d3'},
 ];
- 
+
 // ─── STATE ─────────────────────────────────────────────────
 let active=false, watchId=null;
 let curLat=0, curLng=0, curBearing=0, curSpeed=0;
 let map=null, ambMarker=null, pathLine=null, pathCoords=[];
 let routeBearing = 0; // from Google Maps Directions
- 
+
 // ─── TOGGLE ────────────────────────────────────────────────
 async function toggle(){
   active = !active;
   const btn   = document.getElementById('mainBtn');
   const label = document.getElementById('btnLabel');
- 
+
   if(active){
     btn.classList.add('on');
     label.innerHTML = 'ACTIVE<br>🔴 LIVE';
@@ -177,11 +177,12 @@ async function toggle(){
     document.getElementById('sNrf').textContent='BROADCASTING';
     document.getElementById('sNrf').className='val green';
     document.getElementById('bearingBox').style.display='block';
- 
+
     await pushFirebase(true, 0, 0, 0, true);
     startGPS();
     getRouteBearing();
- 
+    startPoleStatusPolling(); // ← start reading pole status from Firebase
+
   } else {
     btn.classList.remove('on');
     label.innerHTML = 'TAP TO<br>ACTIVATE';
@@ -190,14 +191,14 @@ async function toggle(){
     document.getElementById('sNrf').textContent='OFF';
     document.getElementById('sNrf').className='val';
     document.getElementById('bearingBox').style.display='none';
- 
+
     if(watchId) navigator.geolocation.clearWatch(watchId);
     watchId=null; pathCoords=[];
     await pushFirebase(false, 0, 0, 0, false);
-    resetPoles();
+    stopPoleStatusPolling(); // ← stop polling and reset badges
   }
 }
- 
+
 // ─── GPS ───────────────────────────────────────────────────
 function startGPS(){
   if(!navigator.geolocation){
@@ -207,39 +208,39 @@ function startGPS(){
   watchId = navigator.geolocation.watchPosition(onGPS, onGPSErr,
     {enableHighAccuracy:true, maximumAge:0, timeout:10000});
 }
- 
+
 function onGPS(pos){
   curLat   = pos.coords.latitude;
   curLng   = pos.coords.longitude;
   curSpeed = pos.coords.speed ? (pos.coords.speed*3.6).toFixed(1) : 0;
- 
+
   document.getElementById('gpsWarn').style.display='none';
   document.getElementById('sGps').textContent='✅ Live ('+Math.round(pos.coords.accuracy)+'m acc)';
   document.getElementById('sGps').className='val green';
   document.getElementById('sLat').textContent=curLat.toFixed(6);
   document.getElementById('sLng').textContent=curLng.toFixed(6);
   document.getElementById('sSpeed').textContent=curSpeed+' km/h';
- 
+
   pathCoords.push({lat:curLat, lng:curLng});
   if(pathLine) pathLine.setPath(pathCoords);
   if(ambMarker){ ambMarker.setPosition({lat:curLat,lng:curLng}); ambMarker.setVisible(true); }
   if(map) map.panTo({lat:curLat,lng:curLng});
- 
+
   updateBearingDisplay(routeBearing);
   updatePoleDistances(curLat, curLng);
   pushFirebase(true, curLat, curLng, routeBearing, true);
 }
- 
+
 function onGPSErr(e){
   document.getElementById('sGps').textContent='❌ '+e.message;
   document.getElementById('sGps').className='val red';
   document.getElementById('gpsWarn').style.display='block';
 }
- 
+
 // ─── GOOGLE MAPS ROUTE BEARING ─────────────────────────────
 async function getRouteBearing(){
   if(!curLat && !curLng){ setTimeout(getRouteBearing,2000); return; }
- 
+
   const origin = curLat+','+curLng;
   const url = `https://maps.googleapis.com/maps/api/directions/json`+
               `?origin=${origin}&destination=${encodeURIComponent(DEST)}`+
@@ -261,7 +262,7 @@ async function getRouteBearing(){
     }
   } catch(e){ console.log('Directions API error',e); }
 }
- 
+
 // ─── BEARING CALC ──────────────────────────────────────────
 function calcBearing(lat1,lng1,lat2,lng2){
   const dLng=(lng2-lng1)*Math.PI/180;
@@ -270,7 +271,7 @@ function calcBearing(lat1,lng1,lat2,lng2){
   const x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLng);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
- 
+
 function updateBearingDisplay(b){
   const arrows=['⬆️','↗️','➡️','↘️','⬇️','↙️','⬅️','↖️'];
   const dirs=['NORTH','NE','EAST','SE','SOUTH','SW','WEST','NW'];
@@ -280,7 +281,7 @@ function updateBearingDisplay(b){
   document.getElementById('bearingVal').textContent=b.toFixed(1)+'° from north';
   document.getElementById('sBearing').textContent=b.toFixed(1)+'°';
 }
- 
+
 // ─── HAVERSINE ─────────────────────────────────────────────
 function haversine(lat1,lng1,lat2,lng2){
   const R=6371000;
@@ -290,7 +291,7 @@ function haversine(lat1,lng1,lat2,lng2){
            Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
- 
+
 // ─── POLE DISTANCES ────────────────────────────────────────
 function updatePoleDistances(lat,lng){
   POLES.forEach(p=>{
@@ -302,7 +303,7 @@ function updatePoleDistances(lat,lng){
     else { badge.textContent='STANDBY'; badge.className='badge off'; }
   });
 }
- 
+
 function resetPoles(){
   POLES.forEach(p=>{
     document.getElementById(p.dist).textContent='—';
@@ -310,7 +311,55 @@ function resetPoles(){
     b.textContent='OFF'; b.className='badge off';
   });
 }
- 
+
+// ─── POLL POLE STATUS FROM FIREBASE ────────────────────────
+// This reads what each pole ESP32 wrote back to Firebase
+// So app shows ALERT even when NRF triggered the pole (not GPS)
+let polePoller = null;
+
+function startPoleStatusPolling(){
+  if(polePoller) return; // already running
+  polePoller = setInterval(pollPoleStatus, 2000); // every 2s
+}
+
+function stopPoleStatusPolling(){
+  if(polePoller){ clearInterval(polePoller); polePoller=null; }
+  resetPoles();
+}
+
+async function pollPoleStatus(){
+  try{
+    const res = await fetch(FIREBASE+'/poles.json');
+    if(!res.ok) return;
+    const data = await res.json();
+    if(!data) return;
+
+    POLES.forEach(p=>{
+      const pole = data[p.id];
+      const badge = document.getElementById(p.el);
+      const distEl = document.getElementById(p.dist);
+
+      if(pole && pole.alert === true){
+        // Pole reported ACTIVE via Firebase (GPS or NRF triggered it)
+        const ch = pole.channel || 'unknown';
+        const isNrf = ch.includes('NRF') || ch.includes('nrf');
+        badge.textContent = isNrf ? '🔴 NRF ALERT' : '🔴 GPS ALERT';
+        badge.className   = 'badge alert';
+        // Show which channel triggered it
+        distEl.textContent = 'via ' + ch;
+      } else {
+        // Only reset to STANDBY if GPS also shows no alert
+        if(badge.className !== 'badge alert'){
+          badge.textContent = 'STANDBY';
+          badge.className   = 'badge off';
+        }
+      }
+    });
+  }catch(e){
+    console.log('Pole status poll error:', e);
+  }
+}
+
 // ─── FIREBASE ──────────────────────────────────────────────
 async function pushFirebase(isActive,lat,lng,bearing,nrfActive){
   try{
@@ -330,7 +379,7 @@ async function pushFirebase(isActive,lat,lng,bearing,nrfActive){
     document.getElementById('sFb').className='val red';
   }
 }
- 
+
 // ─── GOOGLE MAP ────────────────────────────────────────────
 function initMap(){
   const centre={lat:9.978,lng:76.277};
@@ -344,7 +393,7 @@ function initMap(){
       {featureType:'water',elementType:'geometry',stylers:[{color:'#0e1626'}]}
     ]
   });
- 
+
   // Pole markers
   POLES.forEach(p=>{
     new google.maps.Marker({
@@ -356,7 +405,7 @@ function initMap(){
       label:{text:'P'+p.id,color:'#fff',fontSize:'9px',fontWeight:'bold'}
     });
   });
- 
+
   // Ambulance marker
   ambMarker=new google.maps.Marker({
     map:map, visible:false, title:'Ambulance',
@@ -364,7 +413,7 @@ function initMap(){
           scale:6,fillColor:'#ff4444',fillOpacity:1,
           strokeColor:'#fff',strokeWeight:2}
   });
- 
+
   // Path polyline
   pathLine=new google.maps.Polyline({
     map:map, path:[], geodesic:true,
